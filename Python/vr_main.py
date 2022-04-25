@@ -1,8 +1,8 @@
 import math
-
 import pybullet
 import pybullet as p
 import qibullet
+import threading
 
 
 CONTROLLER_ID = 0
@@ -29,9 +29,60 @@ def eular_angle(axis, quart):
     return angle
 
 
+def rotate_head(pepper):
+    while True:
+        HMDEvents = p.getVREvents(2)
+        for e in HMDEvents:
+            pepper.moveTo(pepper.getPosition()[0], pepper.getPosition()[1], eular_angle('roll', e[ORIENTATION]) + 1.5708,
+                          speed=0.1, frame=1, _async=True)
+
+
+def move_left_arm(pepper):
+    while True:
+        events = p.getVREvents()
+
+        if events[CONTROLLER_ID] == 1:
+            endEffectorLinkIndex = pepper.link_dict["l_hand"].getIndex()
+            ik = p.calculateInverseKinematics(bodyUniqueId, endEffectorLinkIndex, e[POSITION])
+            angles = list(ik)[:-3]
+            angles.remove(angles[9])
+            angles.remove(angles[28])
+            angles[0:3] = [0, 0, 0]
+            pepper.setAngles(joints, angles, 1)
+            pepper.setAngles('LWristYaw', eular_angle('yaw', e[ORIENTATION]), 1)
+
+
+def move_right_arm(pepper):
+    while True:
+        events = p.getVREvents()
+
+        if events[CONTROLLER_ID] == 2:
+            endEffectorLinkIndex = pepper.link_dict["r_hand"].getIndex()
+            ik = p.calculateInverseKinematics(bodyUniqueId, endEffectorLinkIndex, e[POSITION])
+            angles = list(ik)[:-3]
+            angles.remove(angles[9])
+            angles.remove(angles[28])
+            angles[0:3] = [0, 0, 0]
+
+            pepper.setAngles(joints, angles, 1)
+            pepper.setAngles('RWristYaw', eular_angle('yaw', e[ORIENTATION]), 1)
+
+
+def move_thread(pepper):
+    while True:
+        events = p.getVREvents()
+        for e in events:
+            if e[CONTROLLER_ID] == 1:
+                if e[BUTTONS] == GRIP:
+                    pepper.moveTo(1, 0, 0, _async=True)
+            else:
+                if e[BUTTONS] == GRIP:
+                    pepper.moveTo(1, 0, 0, _async=True)
+
+
 if __name__ == "__main__":
     simulation_manager = qibullet.SimulationManager()
-    client_id = simulation_manager.launchSimulation(gui=True, use_shared_memory=False, auto_step=False)
+    client_id = simulation_manager.launchSimulation(gui=False, use_shared_memory=True, auto_step=False)
 
     pybullet.setRealTimeSimulation(1)
 
@@ -47,42 +98,22 @@ if __name__ == "__main__":
     joints.remove('LWristYaw')
     joints.remove('RWristYaw')
 
+    head_thread = threading.Thread(target=rotate_head, args=(pepper,), daemon=True)
+    l_hand_thread = threading.Thread(target=move_left_arm, args=(pepper,), daemon=True)
+    r_hand_thread = threading.Thread(target=move_right_arm, args=(pepper,), daemon=True)
+    movement_thread = threading.Thread(target=move_thread, args=(pepper,), daemon=True)
+    head_thread.start()
+    l_hand_thread.start()
+    r_hand_thread.start()
+    movement_thread.start()
+
     try:
         while True:
             events = p.getVREvents()
-            HMDEvents = p.getVREvents(2)
 
             for e in events:
-
-                if e[CONTROLLER_ID] == 1:
-                    endEffectorLinkIndex = pepper.link_dict["l_hand"].getIndex()
-                    ik = p.calculateInverseKinematics(bodyUniqueId, endEffectorLinkIndex, e[POSITION])
-                    angles = list(ik)[:-3]
-                    angles.remove(angles[9])
-                    angles.remove(angles[28])
-                    angles[0:3] = [0, 0, 0]
-                    pepper.setAngles(joints, angles, 1)
-                    pepper.setAngles('LWristYaw', eular_angle('yaw', e[ORIENTATION]), 1)
-
-                if e[CONTROLLER_ID] == 2:
-                    endEffectorLinkIndex = pepper.link_dict["r_hand"].getIndex()
-                    ik = p.calculateInverseKinematics(bodyUniqueId, endEffectorLinkIndex, e[POSITION])
-                    angles = list(ik)[:-3]
-                    angles.remove(angles[9])
-                    angles.remove(angles[28])
-                    angles[0:3] = [0, 0, 0]
-
-                    pepper.setAngles(joints, angles, 1)
-                    pepper.setAngles('RWristYaw', eular_angle('yaw', e[ORIENTATION]), 1)
-
-                for button in e[BUTTONS]:
-                    if button == 1:
-                        print(e[CONTROLLER_ID], e[BUTTONS])
-                if e[ANALOG_AXIS] != 0:
-                    print(e[CONTROLLER_ID], e[ANALOG_AXIS])
-
-            for e in HMDEvents:
-                pepper.moveTo(pepper.getPosition()[0], pepper.getPosition()[1], e[ORIENTATION][3], frame=1, _async=True)
+                if e[BUTTONS]:
+                    print(e[CONTROLLER_ID], e[BUTTONS])
 
     except KeyboardInterrupt or SystemExit:
         pass
