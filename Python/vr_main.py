@@ -1,6 +1,8 @@
+import math
 import pybullet
 import pybullet as p
 import qibullet
+import threading
 
 
 CONTROLLER_ID = 0
@@ -10,63 +12,131 @@ NUM_MOVE_EVENTS = 5
 BUTTONS = 6
 ANALOG_AXIS = 3
 
+GRIP = (0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 
-def euc_dist(posA, posB):
-    dist = 0.
-    for i in range(len(posA)):
-        dist += (posA[i] - posB[i]) ** 2
-    return dist
+
+def eular_angle(axis, quart):
+    # From Shital Shah on https://stackoverflow.com/questions/5782658/extracting-yaw-from-a-quaternion
+    if axis == 'roll':
+        angle = math.atan2(2.0 * (quart[3] * quart[2] + quart[0] * quart[1]), 1.0 - 2.0 * (quart[1] * quart[1] + quart[2] * quart[2]))
+    elif axis == 'pitch':
+        angle = math.asin(2.0 * (quart[2] * quart[0] - quart[3] * quart[1]))
+    elif axis == 'yaw':
+        angle = math.atan2(2.0 * (quart[3] * quart[0] + quart[1] * quart[2]), - 1.0 + 2.0 * (quart[0] * quart[0] + quart[1] * quart[1]))
+    else:
+        angle = None
+    return angle
+
+
+def rotate_head(pepper):
+    while True:
+        print("Head tick")
+        HMDEvents = p.getVREvents(2)
+        for e in HMDEvents:
+            pepper.moveTo(pepper.getPosition()[0], pepper.getPosition()[1], eular_angle('roll', e[ORIENTATION]) + 1.5708, speed=0.1, frame=1, _async=True)
+
+
+def move_left_arm(pepper):
+    global LendEffectorLinkIndex
+    while True:
+        print("Left tick")
+        events = p.getVREvents()
+        try:
+            if events[0]:
+                ik = p.calculateInverseKinematics(bodyUniqueId, LendEffectorLinkIndex, events[0][POSITION])
+                angles = list(ik)[:-3]
+                angles.remove(angles[9])
+                angles.remove(angles[28])
+                angles[0:3] = [0, 0, 0]
+                pepper.setAngles(joints, angles, 1)
+        except IndexError:
+            pass
+
+
+def move_right_arm(pepper):
+    global RendEffectorLinkIndex
+    while True:
+        print("Right tick")
+        events = p.getVREvents()
+        try:
+            if events[1]:
+                ik = p.calculateInverseKinematics(bodyUniqueId, RendEffectorLinkIndex, events[1][POSITION])
+                angles = list(ik)[:-3]
+                angles.remove(angles[9])
+                angles.remove(angles[28])
+                angles[0:3] = [0, 0, 0]
+                pepper.setAngles(joints, angles, 1)
+        except IndexError:
+            pass
+
+
+def move_thread(pepper):
+    while True:
+        print("Move tick")
+        events = p.getVREvents()
+        for e in events:
+            if e[CONTROLLER_ID] == 1:
+                pepper.setAngles('LWristYaw', eular_angle('yaw', e[ORIENTATION]), 1)
+                if e[BUTTONS] == GRIP:
+                    pepper.moveTo(1, 0, 0, _async=True)
+            else:
+                pepper.setAngles('RWristYaw', eular_angle('yaw', e[ORIENTATION]), 1)
+                if e[BUTTONS] == GRIP:
+                    pepper.moveTo(-1, 0, 0, _async=True)
 
 
 if __name__ == "__main__":
     simulation_manager = qibullet.SimulationManager()
     client_id = simulation_manager.launchSimulation(gui=False, use_shared_memory=True, auto_step=False)
 
+    pybullet.setRealTimeSimulation(1)
+
     pepper = simulation_manager.spawnPepper(
         client_id,
         spawn_ground_plane=True)
+    pepper.goToPosture('Stand', 1)
 
-    cube = p.loadURDF("D:/Documents/~UNI_BACKUP~/Second_Year/Project CMP3753M/qiBullet Project/Python/objects/cube.urdf")
+    pybullet.setVRCameraState(trackObject=pepper.getRobotModel(), trackObjectFlag=1)
 
-    joint = p.createConstraint(cube, -1, pepper.getRobotModel(), pepper.link_dict['r_hand'].index(), p.JOINT_POINT2POINT, [0,1,0], [0,0,0], [0,0,0])
+    bodyUniqueId = pepper.getRobotModel()
+    joints = list(pepper.joint_dict.keys())
+    joints.remove('LWristYaw')
+    joints.remove('RWristYaw')
 
-    events = p.getVREvents()
-    for e in events:
-        if e[CONTROLLER_ID] == 2:
-            p.resetBasePositionAndOrientation(cube, e[POSITION], e[ORIENTATION])
+    LendEffectorLinkIndex = pepper.link_dict["l_hand"].getIndex()
+    RendEffectorLinkIndex = pepper.link_dict["r_hand"].getIndex()
 
-
+    head_thread = threading.Thread(target=rotate_head, args=(pepper,), daemon=True)
+    l_hand_thread = threading.Thread(target=move_left_arm, args=(pepper,), daemon=True)
+    r_hand_thread = threading.Thread(target=move_right_arm, args=(pepper,), daemon=True)
+    movement_thread = threading.Thread(target=move_thread, args=(pepper,), daemon=True)
+    head_thread.start()
+    l_hand_thread.start()
+    r_hand_thread.start()
+    #movement_thread.start()
 
     try:
         while True:
+            print("Main tick")
             events = p.getVREvents()
-            HMDEvents = p.getVREvents(2)
 
-            """print("Pepper joints: {}".format((pepper.getAnglesPosition(["LShoulderPitch", "LShoulderRoll", "LElbowYaw", "LElbowRoll", "LWristYaw", "LHand"]))))"""
-            """bodyUniqueId = pepper.getRobotModel()
-            endEffectorLinkIndex = pepper.link_dict["r_hand"].getIndex()
-            pos = [0.1, 0.2, 0.1]
-            ik = p.calculateInverseKinematics2(bodyUniqueId, endEffectorLinkIndex, pos)
-            print(len(ik))"""
-            """for e in events:
-                print("Controller ID: {}".format(e[CONTROLLER_ID]))
-                print("Position: {}".format(e[POSITION]))
-                print("Orientation: {}".format(e[ORIENTATION]))
-                print("---")
+            for e in events:
 
-                for button in e[BUTTONS]:
-                    if button == 1:
-                        print(e[CONTROLLER_ID], e[BUTTONS])
-                if e[ANALOG_AXIS] != 0:
-                    print(e[CONTROLLER_ID], e[ANALOG_AXIS])
+                if sum(e[BUTTONS]) > 0:
+                    print(e[CONTROLLER_ID], e[BUTTONS])
 
-            for e in HMDEvents:
-                print(e[ORIENTATION])
-                pepper.moveTo(e[POSITION][0], e[POSITION][1], e[ORIENTATION][3], frame=1, _async=True)"""
+                if e[CONTROLLER_ID] == 1:
+                    pepper.setAngles('LWristYaw', eular_angle('yaw', e[ORIENTATION]) - 3.14159, 1)
+                    if e[BUTTONS][2] > 0 and e[BUTTONS][34] > 0:
+                        print("Moving")
+                        pepper.move(5, 0, 0, _async=False)
+                else:
+                    pepper.setAngles('RWristYaw', eular_angle('yaw', e[ORIENTATION]) - 3.14159, 1)
+                    if e[BUTTONS][2] > 0 and e[BUTTONS][34] > 0:
+                        print("Moving")
+                        pepper.move(-5, 0, 0, _async=True)
 
-            simulation_manager.stepSimulation(client_id)
-
-    except KeyboardInterrupt:
+    except KeyboardInterrupt or SystemExit:
         pass
 
     simulation_manager.removePepper(pepper)
