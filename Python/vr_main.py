@@ -13,6 +13,7 @@ BUTTONS = 6
 ANALOG_AXIS = 3
 
 GRIP = (0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+BUTTON_X = (0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 
 
 def eular_angle(axis, quart):
@@ -72,7 +73,7 @@ def move_right_arm(pepper):
 
 
 def move_thread(pepper):
-    global head_thread
+    """global head_thread
     while True:
         events = p.getVREvents()
         for e in events:
@@ -83,7 +84,25 @@ def move_thread(pepper):
             else:
                 pepper.setAngles('RWristYaw', -eular_angle('yaw', e[ORIENTATION])+3.14, 1)
                 if e[BUTTONS] == GRIP and p.VR_BUTTON_IS_DOWN:
-                    pepper.moveTo(-1, 0, 0, speed=5, _async=True)
+                    pepper.moveTo(-1, 0, 0, speed=5, _async=True)"""
+
+    while True:
+        events = p.getVREvents()
+
+        for e in events:
+            if e[CONTROLLER_ID] == 1:
+                if e[BUTTONS] == BUTTON_X and p.VR_BUTTON_IS_DOWN:
+                    pepper.move(0.5, 0, eular_angle("roll", e[ORIENTATION]))
+                    print("X button pressed")
+                if e[BUTTONS][7] == 0:
+                    pepper.stopMove()
+
+            if e[CONTROLLER_ID] == 2:
+                if e[BUTTONS] == BUTTON_X and p.VR_BUTTON_IS_DOWN:
+                    pepper.move(-0.5, 0, eular_angle("roll", e[ORIENTATION]))
+                    print("X button pressed")
+                if e[BUTTONS][7] == 0:
+                    pepper.stopMove()
 
 
 if __name__ == "__main__":
@@ -96,6 +115,9 @@ if __name__ == "__main__":
         client_id,
         spawn_ground_plane=True)
     pepper.goToPosture('Stand', 1)
+
+    table = p.loadURDF("../../../Python/objects/TikkaNOVA.urdf", basePosition=(1.5, 0, 0.4), baseOrientation=(1, 0, 0, 1), useFixedBase=1)
+    mug = p.loadURDF("../../../Python/objects/Cappuccino_cup.urdf", basePosition=(1.2, 0, 0.7), baseOrientation=(1, 1, 1, 1))
 
     pybullet.setVRCameraState(trackObject=pepper.getRobotModel(), trackObjectFlag=1)
 

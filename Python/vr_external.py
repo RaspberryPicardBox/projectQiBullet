@@ -14,6 +14,7 @@ ANALOG_AXIS = 3
 
 GRIP = (0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 BUTTON_X = (0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+TRIG = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 
 
 def eular_angle(axis, quart):
@@ -68,12 +69,27 @@ def move_pepper(pepper):
         for e in events:
             if e[CONTROLLER_ID] == 1:
                 if e[BUTTONS] == BUTTON_X and p.VR_BUTTON_IS_DOWN:
-                    # pepper.move(1, 0, eular_angle("yaw", e[ORIENTATION]))
+                    pepper.move(0.5, 0, eular_angle("roll", e[ORIENTATION]))
                     print("X button pressed")
-                    pepper.move(0.5, 0, 0)
-                if not p.VR_BUTTON_IS_DOWN:
-                    print("Button not pressed")
+                if e[BUTTONS][7] == 0:
                     pepper.stopMove()
+
+            if e[CONTROLLER_ID] == 2:
+                if e[BUTTONS] == BUTTON_X and p.VR_BUTTON_IS_DOWN:
+                    pepper.move(-0.5, 0, eular_angle("roll", e[ORIENTATION]))
+                    print("X button pressed")
+                if e[BUTTONS][7] == 0:
+                    pepper.stopMove()
+
+
+"""def grab_object(pepper, constraints):
+    events = p.getVREvents()
+
+    for e in events:
+        if e[CONTROLLER_ID] == 1:
+            if e[BUTTONS] == TRIG and p.VR_BUTTON_IS_DOWN:
+                #constraints.append(p.createConstraint(bodyUniqueId, LendEffectorLinkIndex, mug,))
+                pass"""
 
 
 if __name__ == "__main__":
@@ -87,6 +103,10 @@ if __name__ == "__main__":
         spawn_ground_plane=True)
     pepper.goToPosture('Stand', 1)
 
+    table = p.loadURDF("../../../Python/objects/TikkaNOVA.urdf", basePosition=(1.5, 0, 0.4), baseOrientation=(1, 0, 0, 1), useFixedBase=1)
+    mug = p.loadURDF("../../../Python/objects/Cappuccino_cup.urdf", basePosition=(1.2, 0, 0.7), baseOrientation=(1, 1, 1, 1))
+    #cube = p.loadURDF("../../../Python/objects/cube.urdf", basePosition=(1.5, 0, 1), baseOrientation=(1, 0, 0, 1))
+
     bodyUniqueId = pepper.getRobotModel()
     joints = list(pepper.joint_dict.keys())
     joints.remove('LWristYaw')
@@ -95,16 +115,22 @@ if __name__ == "__main__":
     LendEffectorLinkIndex = pepper.link_dict["l_hand"].getIndex()
     RendEffectorLinkIndex = pepper.link_dict["r_hand"].getIndex()
 
+    constraints = []
+
     l_hand_thread = threading.Thread(target=move_left_arm, args=(pepper,), daemon=True)
     r_hand_thread = threading.Thread(target=move_right_arm, args=(pepper,), daemon=True)
     move_thread = threading.Thread(target=move_pepper, args=(pepper,), daemon=True)
+    # grab_thread = threading.Thread(target=grab_object, args=(pepper, constraints,), daemon=True)
     l_hand_thread.start()
     r_hand_thread.start()
     move_thread.start()
+    # grab_thread.start()
 
     try:
         while True:
             events = p.getVREvents()
+            """for e in events:
+                print(e[CONTROLLER_ID], " ", e[BUTTONS])"""
 
     except KeyboardInterrupt or SystemExit:
         pass
